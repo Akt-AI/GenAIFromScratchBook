@@ -1,0 +1,121 @@
+\section{Introduction}
+The Transformer architecture, introduced by Vaswani et al. in 2017, has become the foundation for many state-of-the-art models in natural language processing (NLP). It is based on a mechanism called self-attention, which allows the model to weigh the importance of different words in a sequence. This chapter details the mathematical formulation of the Transformer architecture.
+
+\section{Self-Attention Mechanism}
+
+The self-attention mechanism allows each position in the input sequence to attend to all other positions, computing a weighted sum of these positions. The basic steps are as follows:
+
+\subsection{Scaled Dot-Product Attention}
+Given a set of queries \( Q \), keys \( K \), and values \( V \), the scaled dot-product attention is computed as:
+
+\begin{equation}
+\text{Attention}(Q, K, V) = \text{softmax}\left( \frac{QK^T}{\sqrt{d_k}} \right) V
+\end{equation}
+
+where \( d_k \) is the dimension of the key vectors. The division by \( \sqrt{d_k} \) is used to stabilize gradients during training.
+
+\subsection{Multi-Head Attention}
+Instead of performing a single attention function, the Transformer employs multiple attention heads. Each head has its own set of projection matrices, allowing the model to jointly attend to information from different representation subspaces.
+
+\begin{equation}
+\text{MultiHead}(Q, K, V) = \text{Concat}(\text{head}_1, \text{head}_2, \ldots, \text{head}_h)W^O
+\end{equation}
+
+where each attention head is computed as:
+
+\begin{equation}
+\text{head}_i = \text{Attention}(QW_i^Q, KW_i^K, VW_i^V)
+\end{equation}
+
+Here, \( W_i^Q \), \( W_i^K \), \( W_i^V \), and \( W^O \) are learned projection matrices.
+
+\section{Position-Wise Feed-Forward Networks}
+
+Each position in the sequence is passed through a fully connected feed-forward network, which is applied independently to each position. The feed-forward network consists of two linear transformations with a ReLU activation in between:
+
+\begin{equation}
+\text{FFN}(x) = \max(0, xW_1 + b_1)W_2 + b_2
+\end{equation}
+
+\section{Positional Encoding}
+
+Since the Transformer has no recurrence or convolution, it uses positional encodings to inject information about the relative or absolute position of the tokens in the sequence. The positional encodings are added to the input embeddings at the bottoms of the encoder and decoder stacks.
+
+For each position \( pos \) and dimension \( i \), the positional encoding is defined as:
+
+\begin{equation}
+\text{PE}(pos, 2i) = \sin\left(\frac{pos}{10000^{2i/d_{\text{model}}}}\right)
+\end{equation}
+\begin{equation}
+\text{PE}(pos, 2i+1) = \cos\left(\frac{pos}{10000^{2i/d_{\text{model}}}}\right)
+\end{equation}
+
+\section{Encoder}
+
+The encoder is composed of a stack of \( N \) identical layers. Each layer has two sub-layers:
+
+\begin{itemize}
+    \item A multi-head self-attention mechanism.
+    \item A position-wise fully connected feed-forward network.
+\end{itemize}
+
+Each sub-layer employs a residual connection around it, followed by layer normalization. The output of each sub-layer is:
+
+\begin{equation}
+\text{LayerNorm}(x + \text{Sublayer}(x))
+\end{equation}
+
+The final output of the encoder is:
+
+\begin{equation}
+\text{Encoder}(X) = \text{Layer}_N(\ldots \text{Layer}_1(X))
+\end{equation}
+
+\section{Decoder}
+
+The decoder is also composed of a stack of \( N \) identical layers. In addition to the two sub-layers in each encoder layer, the decoder inserts a third sub-layer, which performs multi-head attention over the output of the encoder stack. The sub-layers in each decoder layer are:
+
+\begin{itemize}
+    \item A masked multi-head self-attention mechanism.
+    \item A multi-head attention mechanism over the encoder's output.
+    \item A position-wise fully connected feed-forward network.
+\end{itemize}
+
+The output of each sub-layer is computed similarly to the encoder, with residual connections and layer normalization.
+
+\begin{equation}
+\text{LayerNorm}(x + \text{Sublayer}(x))
+\end{equation}
+
+The final output of the decoder is:
+
+\begin{equation}
+\text{Decoder}(Y, \text{EncOutput}) = \text{Layer}_N(\ldots \text{Layer}_1(Y, \text{EncOutput}))
+\end{equation}
+
+\section{Final Linear and Softmax Layer}
+
+The decoder's output is transformed into the final output sequence by a linear layer followed by a softmax layer. The final output probabilities are:
+
+\begin{equation}
+\text{Output} = \text{softmax}(W_s \cdot \text{DecoderOutput} + b_s)
+\end{equation}
+
+where \( W_s \) and \( b_s \) are learned parameters.
+
+\section{Training the Transformer}
+
+The Transformer is trained using the cross-entropy loss, which measures the difference between the predicted probability distribution and the true distribution. The loss is computed as:
+
+\begin{equation}
+\mathcal{L} = -\sum_{i=1}^N y_i \log(\hat{y}_i)
+\end{equation}
+
+where \( y_i \) is the true probability and \( \hat{y}_i \) is the predicted probability for the \( i \)-th token.
+
+\section{Conclusion}
+
+The Transformer architecture, with its self-attention mechanism and feed-forward networks, has proven to be highly effective for a wide range of NLP tasks. Its ability to model long-range dependencies and its parallelizable structure make it a powerful alternative to traditional recurrent and convolutional models.
+
+\bibliographystyle{plain}
+\bibliography{references}

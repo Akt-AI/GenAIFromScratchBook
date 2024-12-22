@@ -1,0 +1,94 @@
+\section{Introduction}
+Diffusion models are a class of probabilistic generative models that have shown impressive performance in various applications, particularly in image synthesis. These models define a diffusion process where data is progressively transformed into a structured form from noise, and vice versa. This chapter delves into the principles, mathematical formulation, training process, and applications of diffusion models.
+
+\section{Principles of Diffusion Models}
+Diffusion models are inspired by the physical process of diffusion, where particles spread out from high concentration areas to low concentration areas. In the context of generative modeling, this process is reversed: we start with random noise and iteratively transform it into a structured data distribution.
+
+\subsection{Forward Diffusion Process}
+The forward diffusion process gradually adds noise to the data, converting it into a simple distribution, usually Gaussian noise. This process can be described as a series of transitions \( q(x_t | x_{t-1}) \), where \( x_t \) represents the data at timestep \( t \).
+
+\begin{equation}
+q(x_t | x_{t-1}) = \mathcal{N}(x_t; \sqrt{\alpha_t} x_{t-1}, (1 - \alpha_t) I)
+\end{equation}
+
+where \( \alpha_t \) are hyperparameters controlling the noise schedule.
+
+\subsection{Reverse Diffusion Process}
+The reverse diffusion process aims to reconstruct the data from noise. This is achieved by learning the reverse transitions \( p_\theta(x_{t-1} | x_t) \), where \( \theta \) represents the parameters of the model.
+
+\begin{equation}
+p_\theta(x_{t-1} | x_t) = \mathcal{N}(x_{t-1}; \mu_\theta(x_t, t), \Sigma_\theta(x_t, t))
+\end{equation}
+
+The goal is to learn the mean \( \mu_\theta \) and covariance \( \Sigma_\theta \) functions that can reverse the diffusion process.
+
+\section{Mathematical Formulation}
+Diffusion models can be formalized using a variational framework. The objective is to maximize the likelihood of the data under the model by optimizing a variational bound.
+
+\subsection{Variational Lower Bound}
+The variational lower bound (VLB) on the log-likelihood can be derived as follows:
+
+\begin{equation}
+\log p_\theta(x_0) \geq \mathbb{E}_q \left[ \log \frac{p_\theta(x_{0:T})}{q(x_{1:T} | x_0)} \right]
+\end{equation}
+
+where \( p_\theta(x_{0:T}) \) represents the joint distribution of the data and latent variables, and \( q(x_{1:T} | x_0) \) is the forward diffusion process.
+
+\subsection{Optimization Objective}
+The VLB can be decomposed into a series of KL divergences, which are optimized during training. The optimization objective for timestep \( t \) is:
+
+\begin{equation}
+L_t = \mathbb{E}_q \left[ \| x_0 - \mu_\theta(x_t, t) \|^2 + \text{Tr}(\Sigma_\theta(x_t, t)) \right]
+\end{equation}
+
+The overall loss is the sum of the individual losses across all timesteps:
+
+\begin{equation}
+L = \sum_{t=1}^T L_t
+\end{equation}
+
+\section{Training Diffusion Models}
+Training a diffusion model involves learning the parameters \( \theta \) that minimize the variational lower bound. The process can be broken down into the following steps:
+
+\subsection{Sampling from the Forward Process}
+Generate a sequence of noisy samples \( x_{1:T} \) by applying the forward diffusion process to the training data \( x_0 \).
+
+\begin{verbatim}
+for t in range(1, T+1):
+    noise = torch.randn_like(x)
+    x_t = sqrt(alpha[t]) * x + sqrt(1 - alpha[t]) * noise
+\end{verbatim}
+
+\subsection{Optimizing the Reverse Process}
+Train the model to predict the mean and covariance of the reverse process using the generated noisy samples.
+
+\begin{verbatim}
+optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
+
+for t in range(T, 0, -1):
+    optimizer.zero_grad()
+    x_t = generated_samples[t]
+    target = original_samples[0]
+    mu, sigma = model(x_t, t)
+    loss = mse_loss(mu, target) + trace_loss(sigma)
+    loss.backward()
+    optimizer.step()
+\end{verbatim}
+
+\section{Applications of Diffusion Models}
+Diffusion models have shown remarkable success in various applications, particularly in generating high-quality images.
+
+\subsection{Image Synthesis}
+Diffusion models are capable of generating realistic images by reversing the noise to data process. Notable examples include models like Denoising Diffusion Probabilistic Models (DDPMs).
+
+\subsection{Audio Generation}
+Diffusion models can also be applied to audio generation, producing high-fidelity audio samples from noise.
+
+\subsection{Data Imputation}
+Diffusion models can be used to impute missing data by learning to reverse the noise added to the incomplete data, effectively filling in the gaps.
+
+\section{Conclusion}
+Diffusion models represent a powerful approach to generative modeling, leveraging the principles of diffusion processes to transform noise into structured data. By understanding and implementing both the forward and reverse processes, and optimizing the variational lower bound, these models achieve impressive results in various generative tasks. Continued research and development in this field promise to further enhance the capabilities and applications of diffusion models.
+
+\bibliographystyle{plain}
+\bibliography{references}

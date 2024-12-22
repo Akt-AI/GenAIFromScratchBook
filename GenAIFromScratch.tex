@@ -1,0 +1,190 @@
+\documentclass[12pt]{book}
+
+% Packages
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath, amssymb}
+\usepackage{markdown}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{geometry}
+\usepackage{listings}
+\usepackage{makeidx}
+\usepackage{xcolor}
+\usepackage{titling} % For customizing the title page
+\usepackage{lipsum} % For generating placeholder text
+\geometry{a4paper, margin=1in}
+\usepackage[style=alphabetic, backend=biber]{biblatex} % Use the biblatex package
+\addbibresource{references.bib} % Specify the bibliography file
+
+
+% Title Page
+\title{\Huge \textbf{Generative AI from Scratch}}
+\author{\Large Arun Kumar Tiwary}
+\date{\today}
+
+% Enable index
+\makeindex
+
+% Hyperref setup to remove bounding boxes and set link color to blue
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    filecolor=blue,
+    urlcolor=blue,
+    citecolor=blue,
+    pdftitle={Generative AI from Scratch},
+    pdfpagemode=FullScreen,
+}
+
+% Set table of contents text color to blue
+\renewcommand{\contentsname}{\textcolor{blue}{Contents}}
+
+\begin{document}
+
+\frontmatter
+
+% Title Page
+\begin{titlepage}
+    \centering
+    \vspace*{1cm}
+    
+    \includegraphics[width=0.4\textwidth]{Gen-AI&LLM_book/images/images/cover.jpeg}\par\vspace{1cm}
+    
+    {\Huge\bfseries Generative AI from Scratch \par}
+    \vspace{0.5cm}
+    {\LARGE A Comprehensive Guide to Generative Models \par}
+    \vspace{1.5cm}
+    {\Large\itshape Arun Kumar Tiwary \par}
+    \vfill
+    \vspace{0.8cm}
+    {\Large \textit{Date:} \today \par}
+    
+    \vspace*{1cm}
+\end{titlepage}
+
+\tableofcontents
+
+\chapter{Preface}
+\input{Gen-AI&LLM_book/chapters/Chapter_0/preface}
+
+\chapter{Acknowledgments}
+\input{Gen-AI&LLM_book/chapters/Chapter_0/acknowledgments}
+
+\mainmatter
+
+\chapter{Introduction to Generative AI}
+\input{Gen-AI&LLM_book/chapters/Chapter_1/introduction_to_generative_ai}
+
+\chapter{Mathematical Foundations}
+\input{Gen-AI&LLM_book/chapters/Chapter_2/mathematical_foundations}
+
+\chapter{Machine Learning Basics}
+\input{Gen-AI&LLM_book/chapters/Chapter_3/machine_learning_basics}
+
+\chapter{Deep Learning Foundations}
+\input{Gen-AI&LLM_book/chapters/Chapter_4/deep_learning_foundations}
+
+\chapter{Generative Models and LLMS}
+\input{Gen-AI&LLM_book/chapters/Chapter_5/generative_models}
+
+\chapter{Netron}
+\input{Gen-AI&LLM_book/chapters/Chapter_6/netron}
+
+\chapter{LLM hyperparameters}
+\input{Gen-AI&LLM_book/chapters/Chapter_7/llm_hyperparameters}
+
+\chapter{Advanced Generative Techniques}
+\input{Gen-AI&LLM_book/chapters/Chapter_8/advanced_generative_techniques}
+
+\chapter{Training Generative Models}
+\input{Gen-AI&LLM_book/chapters/Chapter_9/training_generative_models}
+
+\chapter{Reinforcement Learning with Human Feedback (RLHF)}
+\input{Gen-AI&LLM_book/chapters/Chapter_10/rlhf}
+
+\chapter{Implementing RLHF using PyTorch from Scratch}
+\input{Gen-AI&LLM_book/chapters/Chapter_11/rlhf_torch}
+
+\chapter{Implementing RLHF for NLP using PyTorch from Scratch}
+\input{Gen-AI&LLM_book/chapters/Chapter_12/nlp_rlhf}
+
+\chapter{LLM Inference Servers}
+\input{Gen-AI&LLM_book/chapters/Chapter_13/inference_server}
+
+\chapter{Deploying LLMs on Kubernetes Cluster}
+\input{Gen-AI&LLM_book/chapters/Chapter_14/deploy_llm}
+
+\chapter{Cluster Performance Tuning}
+\input{Gen-AI&LLM_book/chapters/Chapter_15/tuning}
+
+\chapter{LLM Performance Tuning}
+\input{Gen-AI&LLM_book/chapters/Chapter_16/model_tuning}
+
+\chapter{Diffusion Models}
+\input{Gen-AI&LLM_book/chapters/Chapter_17/diffusion}
+
+\chapter{LLM Quantization}
+\input{Gen-AI&LLM_book/chapters/Chapter_18/quantization}
+
+\chapter{LLM Prunning}
+\input{Gen-AI&LLM_book/chapters/Chapter_19/prunning}
+
+\chapter{LLM Benchmarking}
+\input{Gen-AI&LLM_book/chapters/Chapter_20/benchmarking}
+
+\chapter{Performance: Latecy and Throughput Optimization of LLMs}
+\input{Gen-AI&LLM_book/chapters/Chapter_21/latency_throughput}
+
+\chapter{Physics-Informed Neural Networks}
+\input{Gen-AI&LLM_book/chapters/Chapter_22/pinns}
+
+\chapter{Retrieval-Augmented Generation}
+\input{Gen-AI&LLM_book/chapters/Chapter_23/rag}
+
+\chapter{Prompt Engineering}
+\input{Gen-AI&LLM_book/chapters/Chapter_24/Prompt_Engineering}
+
+\chapter{Auto-evaluation of LLMs}
+\input{Gen-AI&LLM_book/chapters/Chapter_25/auto_eval}
+
+\chapter{Model Engineering and Debugging Tools}
+\input{Gen-AI&LLM_book/chapters/Chapter_26/model_engineering}
+
+\chapter{Model Visualization}
+\input{Gen-AI&LLM_book/chapters/Chapter_27/model_visualizing}
+
+\chapter{Practical Applications}
+\input{Gen-AI&LLM_book/chapters/Chapter_28/practical_applications}
+
+\chapter{Challenges with Large Language Models and Generative AI}
+\input{Gen-AI&LLM_book/chapters/Chapter_29/challenges}
+
+\chapter{AI Agents}
+\input{Gen-AI&LLM_book/chapters/Chapter_30/ai_agents}
+
+\chapter{Vector Databases}
+\input{Gen-AI&LLM_book/chapters/Chapter_31/vdb}
+
+\chapter{Langchain}
+\input{Gen-AI&LLM_book/chapters/Chapter_32/langchain}
+
+\chapter{Ethical Challenges with Large Language Models and Generative AI}
+\input{Gen-AI&LLM_book/chapters/Chapter_33/ethical_considerations}
+
+\chapter{LLama3}
+\input{Gen-AI&LLM_book/chapters/Chapter_34/llama3}
+
+
+\appendix
+\chapter{Appendix A: Python and TensorFlow Setup}
+\input{Gen-AI&LLM_book/chapters/Appendix/appendix_a_python_and_tensorflow_setup}
+
+\chapter{Appendix B: Mathematical Derivations}
+\input{Gen-AI&LLM_book/chapters/Appendix/appendix_b_mathematical_derivations}
+
+\backmatter
+% \input{chapters/references}
+\printindex
+
+\end{document}
+

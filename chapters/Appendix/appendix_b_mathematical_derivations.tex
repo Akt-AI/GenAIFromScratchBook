@@ -1,0 +1,143 @@
+\section{Derivation of Backpropagation}
+
+\section{Introduction}
+Backpropagation is a fundamental algorithm used for training artificial neural networks. It involves computing the gradient of the loss function with respect to each weight by applying the chain rule of calculus. This chapter provides a detailed mathematical derivation of backpropagation, including the key concepts and steps involved. 
+
+\section{Key Concepts}
+
+\subsection{Neural Network}
+A neural network is a computational model composed of layers of interconnected nodes (neurons) that process input data to produce output predictions.\index{Neural Network}
+
+\subsection{Activation Function}
+An activation function defines the output of a neuron given an input or set of inputs. Common activation functions include sigmoid, ReLU (Rectified Linear Unit), and tanh.\index{Activation Function}
+
+\subsection{Loss Function}
+The loss function measures the discrepancy between the predicted output and the actual target. Common loss functions include mean squared error (MSE) and cross-entropy loss.\index{Loss Function}
+
+\subsection{Gradient Descent}
+Gradient descent is an optimization algorithm used to minimize the loss function by iteratively adjusting the weights in the direction of the negative gradient.\index{Gradient Descent}
+
+\subsection{Chain Rule}
+The chain rule is a fundamental calculus principle used to compute the derivative of a composite function. It is essential for deriving the gradients in backpropagation.\index{Chain Rule}
+
+\section{Forward Propagation}
+
+Consider a simple neural network with one hidden layer. The input layer has \(n\) neurons, the hidden layer has \(m\) neurons, and the output layer has \(k\) neurons. Let \(\mathbf{x} \in \mathbb{R}^n\) be the input vector, \(\mathbf{w}_{1}\) be the weight matrix between the input and hidden layers, and \(\mathbf{w}_{2}\) be the weight matrix between the hidden and output layers.
+
+The forward propagation steps are as follows:
+
+\subsection{Hidden Layer}
+\begin{equation}
+\mathbf{z}_{1} = \mathbf{w}_{1} \mathbf{x} + \mathbf{b}_{1}
+\end{equation}
+\begin{equation}
+\mathbf{a}_{1} = \sigma(\mathbf{z}_{1})
+\end{equation}
+where \(\mathbf{z}_{1}\) is the linear combination of inputs, \(\mathbf{b}_{1}\) is the bias term, \(\mathbf{a}_{1}\) is the activation of the hidden layer, and \(\sigma\) is the activation function.
+
+\subsection{Output Layer}
+\begin{equation}
+\mathbf{z}_{2} = \mathbf{w}_{2} \mathbf{a}_{1} + \mathbf{b}_{2}
+\end{equation}
+\begin{equation}
+\mathbf{a}_{2} = \phi(\mathbf{z}_{2})
+\end{equation}
+where \(\mathbf{z}_{2}\) is the linear combination of hidden layer outputs, \(\mathbf{b}_{2}\) is the bias term, \(\mathbf{a}_{2}\) is the activation of the output layer, and \(\phi\) is the activation function (often softmax for classification tasks).
+
+\section{Loss Function}
+
+Assume we are using the cross-entropy loss for a classification task. The loss function \(L\) for a single training example is:
+\begin{equation}
+L(\mathbf{y}, \mathbf{a}_{2}) = -\sum_{i=1}^{k} y_{i} \log(a_{2,i})
+\end{equation}
+where \(\mathbf{y}\) is the true label vector, and \(\mathbf{a}_{2}\) is the predicted probability vector from the output layer.
+
+\section{Backward Propagation}
+
+The goal of backpropagation is to compute the gradients of the loss function with respect to each weight in the network. We use the chain rule to propagate the error backwards through the network.
+
+\subsection{Output Layer Gradients}
+
+First, compute the gradient of the loss with respect to the output layer activations \(\mathbf{a}_{2}\):
+\begin{equation}
+\frac{\partial L}{\partial a_{2,i}} = -\frac{y_{i}}{a_{2,i}}
+\end{equation}
+
+Next, compute the gradient with respect to the pre-activation output \(\mathbf{z}_{2}\):
+\begin{equation}
+\frac{\partial L}{\partial z_{2,i}} = \frac{\partial L}{\partial a_{2,i}} \cdot \frac{\partial a_{2,i}}{\partial z_{2,i}}
+\end{equation}
+
+For the softmax activation function:
+\begin{equation}
+\frac{\partial a_{2,i}}{\partial z_{2,i}} = a_{2,i} (1 - a_{2,i})
+\end{equation}
+
+Combining the above equations:
+\begin{equation}
+\frac{\partial L}{\partial z_{2,i}} = a_{2,i} - y_{i}
+\end{equation}
+
+\subsection{Hidden Layer Gradients}
+
+Now, propagate the error to the hidden layer. Compute the gradient with respect to the hidden layer activations \(\mathbf{a}_{1}\):
+\begin{equation}
+\frac{\partial L}{\partial a_{1,j}} = \sum_{i=1}^{k} \frac{\partial L}{\partial z_{2,i}} \cdot w_{2,ij}
+\end{equation}
+
+Next, compute the gradient with respect to the pre-activation hidden layer outputs \(\mathbf{z}_{1}\):
+\begin{equation}
+\frac{\partial L}{\partial z_{1,j}} = \frac{\partial L}{\partial a_{1,j}} \cdot \frac{\partial a_{1,j}}{\partial z_{1,j}}
+\end{equation}
+
+For the sigmoid activation function:
+\begin{equation}
+\frac{\partial a_{1,j}}{\partial z_{1,j}} = a_{1,j} (1 - a_{1,j})
+\end{equation}
+
+Combining the above equations:
+\begin{equation}
+\frac{\partial L}{\partial z_{1,j}} = \left(\sum_{i=1}^{k} \frac{\partial L}{\partial z_{2,i}} \cdot w_{2,ij}\right) \cdot a_{1,j} (1 - a_{1,j})
+\end{equation}
+
+\subsection{Weight Gradients}
+
+Finally, compute the gradients with respect to the weights and biases:
+
+For the weights between the hidden and output layers:
+\begin{equation}
+\frac{\partial L}{\partial w_{2,ij}} = \frac{\partial L}{\partial z_{2,i}} \cdot a_{1,j}
+\end{equation}
+
+For the biases in the output layer:
+\begin{equation}
+\frac{\partial L}{\partial b_{2,i}} = \frac{\partial L}{\partial z_{2,i}}
+\end{equation}
+
+For the weights between the input and hidden layers:
+\begin{equation}
+\frac{\partial L}{\partial w_{1,jk}} = \frac{\partial L}{\partial z_{1,j}} \cdot x_{k}
+\end{equation}
+
+For the biases in the hidden layer:
+\begin{equation}
+\frac{\partial L}{\partial b_{1,j}} = \frac{\partial L}{\partial z_{1,j}}
+\end{equation}
+
+\section{Summary}
+
+The backpropagation algorithm involves the following steps:
+\begin{enumerate}
+    \item Perform forward propagation to compute the activations and the loss.
+    \item Compute the gradients of the loss with respect to the output layer pre-activations.
+    \item Propagate the error backwards to compute the gradients with respect to the hidden layer pre-activations.
+    \item Compute the gradients with respect to the weights and biases.
+    \item Update the weights and biases using gradient descent.
+\end{enumerate}
+
+\section{Conclusion}
+
+Backpropagation is a critical algorithm for training neural networks, enabling the efficient computation of gradients for optimizing the loss function. By understanding the mathematical derivation and steps involved in backpropagation, researchers and practitioners can effectively train and fine-tune neural network models.
+
+% \section{Derivation of VAE Loss Function}
+% Derivation of the loss function used in variational autoencoders, including the reconstruction and regularization terms.

@@ -1,0 +1,160 @@
+\section{Introduction}
+Large Language Models (LLMs) represent a significant advancement in natural language processing (NLP), capable of understanding and generating human-like text. This chapter delves into the mathematical foundations underlying LLMs, covering key concepts such as probability theory, information theory, linear algebra, and optimization methods that are crucial for understanding and developing these models.
+
+\section{Probability Theory}
+Probability theory is the backbone of many machine learning algorithms, including LLMs. It provides the framework for modeling uncertainty and making predictions based on data.
+
+\subsection{Basic Concepts}
+\begin{itemize}
+    \item \textbf{Random Variables:} A variable that can take on different values, each associated with a probability.
+    \item \textbf{Probability Distributions:} Functions that describe the likelihood of different outcomes. Common distributions include Bernoulli, Gaussian, and Multinomial.
+    \item \textbf{Conditional Probability:} The probability of an event given that another event has occurred, denoted as \( P(A|B) \).
+    \item \textbf{Bayes' Theorem:} A fundamental theorem that relates conditional probabilities:
+
+    \begin{equation}
+    P(A|B) = \frac{P(B|A)P(A)}{P(B)}
+    \end{equation}
+\end{itemize}
+
+\subsection{Markov Chains}
+Markov chains are mathematical systems that undergo transitions from one state to another according to certain probabilistic rules. They are particularly useful in modeling sequences.
+
+\begin{itemize}
+    \item \textbf{Transition Matrix:} Describes the probabilities of moving from one state to another.
+    \item \textbf{Stationary Distribution:} A distribution that remains unchanged as the system evolves over time.
+\end{itemize}
+
+\begin{equation}
+\pi = \pi P
+\end{equation}
+
+\subsection{Hidden Markov Models (HMMs)}
+HMMs are statistical models in which the system being modeled is assumed to follow a Markov process with hidden states. They are widely used in speech and language processing.
+
+\begin{equation}
+P(O| \lambda) = \sum_{all\ paths} P(O|S, \lambda)P(S|\lambda)
+\end{equation}
+
+where \( O \) represents the observed sequence, \( S \) represents the hidden states, and \( \lambda \) represents the model parameters.
+
+\section{Information Theory}
+Information theory deals with quantifying information, primarily through the concepts of entropy, mutual information, and Kullback-Leibler divergence.
+
+\subsection{Entropy}
+Entropy is a measure of the uncertainty or randomness in a random variable.
+
+\begin{equation}
+H(X) = -\sum_{x \in X} P(x) \log P(x)
+\end{equation}
+
+\subsection{Kullback-Leibler Divergence}
+KL divergence measures the difference between two probability distributions.
+
+\begin{equation}
+D_{KL}(P \| Q) = \sum_{x \in X} P(x) \log \frac{P(x)}{Q(x)}
+\end{equation}
+
+\subsection{Mutual Information}
+Mutual information quantifies the amount of information obtained about one random variable through another random variable.
+
+\begin{equation}
+I(X; Y) = \sum_{x \in X} \sum_{y \in Y} P(x, y) \log \frac{P(x, y)}{P(x)P(y)}
+\end{equation}
+
+\section{Linear Algebra}
+Linear algebra is fundamental to the mathematical framework of LLMs, particularly in the representation and manipulation of data.
+
+\subsection{Vectors and Matrices}
+\begin{itemize}
+    \item \textbf{Vectors:} Ordered lists of numbers representing data points in multi-dimensional space.
+    \item \textbf{Matrices:} Two-dimensional arrays of numbers used to represent linear transformations.
+\end{itemize}
+
+\begin{equation}
+\mathbf{A} = \begin{bmatrix}
+a_{11} & a_{12} & \cdots & a_{1n} \\
+a_{21} & a_{22} & \cdots & a_{2n} \\
+\vdots & \vdots & \ddots & \vdots \\
+a_{m1} & a_{m2} & \cdots & a_{mn}
+\end{bmatrix}
+\end{equation}
+
+\subsection{Matrix Operations}
+\begin{itemize}
+    \item \textbf{Addition:} Element-wise addition of two matrices.
+    \item \textbf{Multiplication:} Dot product of rows and columns.
+    \item \textbf{Transpose:} Flipping a matrix over its diagonal.
+\end{itemize}
+
+\begin{equation}
+\mathbf{A}^\top = \begin{bmatrix}
+a_{11} & a_{21} & \cdots & a_{m1} \\
+a_{12} & a_{22} & \cdots & a_{m2} \\
+\vdots & \vdots & \ddots & \vdots \\
+a_{1n} & a_{2n} & \cdots & a_{mn}
+\end{bmatrix}
+\end{equation}
+
+\subsection{Eigenvalues and Eigenvectors}
+Eigenvalues and eigenvectors provide insights into the properties of linear transformations.
+
+\begin{equation}
+\mathbf{A} \mathbf{v} = \lambda \mathbf{v}
+\end{equation}
+
+where \( \lambda \) is an eigenvalue and \( \mathbf{v} \) is an eigenvector of matrix \( \mathbf{A} \).
+
+\section{Optimization Methods}
+Optimization methods are crucial for training LLMs, involving the minimization of a loss function with respect to the model parameters.
+
+\subsection{Gradient Descent}
+Gradient descent is an iterative optimization algorithm used to find the minimum of a function.
+
+\begin{equation}
+\theta_{t+1} = \theta_t - \eta \nabla_\theta \mathcal{L}(\theta_t)
+\end{equation}
+
+where \( \theta_t \) represents the model parameters at iteration \( t \), \( \eta \) is the learning rate, and \( \nabla_\theta \mathcal{L} \) is the gradient of the loss function.
+
+\subsection{Stochastic Gradient Descent (SGD)}
+SGD is a variant of gradient descent where the gradient is computed using a random subset of data points.
+
+\begin{equation}
+\theta_{t+1} = \theta_t - \eta \nabla_\theta \mathcal{L}(\theta_t; x_i, y_i)
+\end{equation}
+
+where \( (x_i, y_i) \) is a randomly chosen data point.
+
+\subsection{Adam Optimizer}
+Adam is an adaptive learning rate optimization algorithm that combines the advantages of both SGD and RMSProp.
+
+\begin{equation}
+m_t = \beta_1 m_{t-1} + (1 - \beta_1) \nabla_\theta \mathcal{L}(\theta_t)
+\end{equation}
+
+\begin{equation}
+v_t = \beta_2 v_{t-1} + (1 - \beta_2) (\nabla_\theta \mathcal{L}(\theta_t))^2
+\end{equation}
+
+\begin{equation}
+\hat{m}_t = \frac{m_t}{1 - \beta_1^t}, \quad \hat{v}_t = \frac{v_t}{1 - \beta_2^t}
+\end{equation}
+
+\begin{equation}
+\theta_{t+1} = \theta_t - \eta \frac{\hat{m}_t}{\sqrt{\hat{v}_t} + \epsilon}
+\end{equation}
+
+\section{Neural Networks}
+Neural networks form the basis of LLMs, consisting of layers of interconnected nodes (neurons) that transform the input data through weighted connections.
+
+\subsection{Feedforward Neural Networks}
+A feedforward neural network (FNN) is the simplest type of artificial neural network, where connections between nodes do not form cycles.
+
+\begin{equation}
+a^{(l)} = \sigma(\mathbf{W}^{(l)} a^{(l-1)} + \mathbf{b}^{(l)})
+\end{equation}
+
+where \( a^{(l)} \) represents the activations at layer \( l \), \( \mathbf{W}^{(l)} \) and \( \mathbf{b}^{(l)} \) are the weights and biases, respectively, and \( \sigma \) is an activation function.
+
+\subsection{Recurrent Neural Networks}
+Recurrent neural networks (RNNs) are designed to handle sequential data, with connections that form directed cycles, allowing information to persist over time.

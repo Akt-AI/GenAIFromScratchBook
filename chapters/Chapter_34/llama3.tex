@@ -1,0 +1,774 @@
+\section{LLama3 Implemenation by Meta: Detailed explanation}
+
+
+\begin{lstlisting}
+import math
+from dataclasses import dataclass
+from typing import Optional, Tuple
+
+import fairscale.nn.model_parallel.initialize as fs_init
+import torch
+import torch.nn.functional as F
+from fairscale.nn.model_parallel.layers import (
+    ColumnParallelLinear,
+    RowParallelLinear,
+    VocabParallelEmbedding,
+)
+from torch import nn
+\end{lstlisting}
+
+\begin{itemize}
+    \item \texttt{math}: Standard library for mathematical functions.
+    \item \texttt{dataclass}: For defining data containers.
+    \item \texttt{typing}: Provides type hints for better code readability.
+    \item \texttt{torch} and \texttt{torch.nn}: PyTorch library for building and training neural networks.
+    \item \texttt{fairscale}: Library for model parallelism, allowing efficient training of large models across multiple GPUs.
+\end{itemize}
+
+\section{Model Arguments Definition}
+
+\begin{lstlisting}
+@dataclass
+class ModelArgs:
+    dim: int = 4096
+    n_layers: int = 32
+    n_heads: int = 32
+    n_kv_heads: Optional[int] = None
+    vocab_size: int = -1
+    multiple_of: int = 256
+    ffn_dim_multiplier: Optional[float] = None
+    norm_eps: float = 1e-5
+    rope_theta: float = 500000
+
+    max_batch_size: int = 32
+    max_seq_len: int = 2048
+\end{lstlisting}
+
+\begin{itemize}
+    \item \texttt{ModelArgs}: A container for model hyperparameters such as dimension size, number of layers, number of attention heads, vocabulary size, and more. These parameters define the architecture and behavior of the transformer model.
+\end{itemize}
+
+\section{RMSNorm Class}
+
+\begin{lstlisting}
+class RMSNorm(torch.nn.Module):
+    def __init__(self, dim: int, eps: float = 1e-6):
+        super().__init__()
+        self.eps = eps
+        self.weight = nn.Parameter(torch.ones(dim))
+
+    def _norm(self, x):
+        return x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)
+
+    def forward(self, x):
+        output = self._norm(x.float()).type_as(x)
+        return output * self.weight
+\end{lstlisting}
+
+\begin{itemize}
+    \item \texttt{RMSNorm}: A variant of normalization (Root Mean Square Layer Normalization). It normalizes the input tensor by its root mean square (RMS) and scales it with learnable parameters.
+    \begin{itemize}
+        \item \texttt{self.weight}: Learnable scaling parameter.
+        \item \texttt{\_norm(x)}: Computes the normalization.
+        \item \texttt{forward(x)}: Applies the normalization and scales the output.
+    \end{itemize}
+\end{itemize}
+
+\section{Precompute Frequency Components}
+
+\begin{lstlisting}
+def precompute_freqs_cis(dim: int, end: int, theta: float = 10000.0):
+    freqs = 1.0 / (theta ** (torch.arange(0, dim, 2)[: (dim // 2)].float() / dim))
+    t = torch.arange(end, device=freqs.device, dtype=torch.float32)
+    freqs = torch.outer(t, freqs)
+    freqs_cis = torch.polar(torch.ones_like(freqs), freqs)  # complex64
+    return freqs_cis
+\end{lstlisting}
+
+\begin{itemize}
+    \item \texttt{precompute_freqs_cis}: Precomputes frequency components for rotary positional encoding.
+    \begin{itemize}
+        \item \texttt{freqs}: Frequencies computed based on theta.
+        \item \texttt{freqs\_cis}: Converts frequencies to complex numbers using polar coordinates.
+    \end{itemize}
+\end{itemize}
+
+\section{Reshape for Broadcast}
+
+\begin{lstlisting}
+def reshape_for_broadcast(freqs_cis: torch.Tensor, x: torch.Tensor):
+    ndim = x.ndim
+    assert 0 <= 1 < ndim
+    assert freqs_cis.shape == (x.shape[1], x.shape[-1])
+    shape = [d if i == 1 or i == ndim - 1 else 1 for i, d in enumerate(x.shape)]
+    return freqs_cis.view(*shape)
+\end{lstlisting}
+
+\begin{itemize}
+    \item \texttt{reshape\_for\_broadcast}: Reshapes the frequency components to match the shape of input tensors for broadcasting.
+\end{itemize}
+
+\section{Apply Rotary Embedding}
+
+\begin{lstlisting}
+def apply_rotary_emb(
+    xq: torch.Tensor,
+    xk: torch.Tensor,
+    freqs_cis: torch.Tensor,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    xq_ = torch.view_as_complex(xq.float().reshape(*xq.shape[:-1], -1, 2))
+    xk_ = torch.view_as_complex(xk.float().reshape(*xk.shape[:-1], -1, 2))
+    freqs_cis = reshape_for_broadcast(freqs_cis, xq_)
+    xq_out = torch.view_as_real(xq_ * freqs_cis).flatten(3)
+    xk_out = torch.view_as_real(xk_ * freqs_cis).flatten(3)
+    return xq_out.type_as(xq), xk_out.type_as(xk)
+\end{lstlisting}
+
+\begin{itemize}
+    \item \texttt{apply\_rotary\_emb}: Applies rotary positional embedding to query and key tensors.
+    \begin{itemize}
+        \item \texttt{xq\_} and \texttt{xk\_}: Converts tensors to complex numbers.
+        \item \texttt{freqs\_cis}: Broadcasts the reshaped frequency components.
+        \item \texttt{xq\_out} and \texttt{xk\_out}: Applies the rotary embedding and converts back to real numbers.
+    \end{itemize}
+\end{itemize}
+
+\section{Repeat Key-Value Tensors}
+
+\begin{lstlisting}
+def repeat_kv(x: torch.Tensor, n_rep: int) -> torch.Tensor:
+    """torch.repeat_interleave(x, dim=2, repeats=n_rep)"""
+    bs, slen, n_kv_heads, head_dim = x.shape
+    if n_rep == 1:
+        return x
+    return (
+        x[:, :, :, None, :]
+        .expand(bs, slen, n_kv_heads, n_rep, head_dim)
+        .reshape(bs, slen, n_kv_heads * n_rep, head_dim)
+    )
+\end{lstlisting}
+
+\begin{itemize}
+    \item \texttt{repeat\_kv}: Repeats key-value tensors along the head dimension.
+    \begin{itemize}
+        \item \texttt{expand} and \texttt{reshape}: Modifies the tensor shape to repeat key-value pairs.
+    \end{itemize}
+\end{itemize}
+
+\section{Attention Class}
+
+\begin{lstlisting}
+class Attention(nn.Module):
+    def __init__(self, args: ModelArgs):
+        super().__init__()
+        self.n_kv_heads = args.n_heads if args.n_kv_heads is None else args.n_kv_heads
+        model_parallel_size = fs_init.get_model_parallel_world_size()
+        self.n_local_heads = args.n_heads // model_parallel_size
+        self.n_local_kv_heads = self.n_kv_heads // model_parallel_size
+        self.n_rep = self.n_local_heads // self.n_local_kv_heads
+        self.head_dim = args.dim // args.n_heads
+
+        self.wq = ColumnParallelLinear(
+            args.dim,
+            args.n_heads * self.head_dim,
+            bias=False,
+            gather_output=False,
+            init_method=lambda x: x,
+        )
+        self.wk = ColumnParallelLinear(
+            args.dim,
+            self.n_kv_heads * self.head_dim,
+            bias=False,
+            gather_output=False,
+            init_method=lambda x: x,
+        )
+        self.wv = ColumnParallelLinear(
+            args.dim,
+            self.n_kv_heads * self.head_dim,
+            bias=False,
+            gather_output=False,
+            init_method=lambda x: x,
+        )
+        self.wo = RowParallelLinear(
+            args.n_heads * self.head_dim,
+            args.dim,
+            bias=False,
+            input_is_parallel=True,
+            init_method=lambda x: x,
+        )
+
+        self.cache_k = torch.zeros(
+            (
+                args.max_batch_size,
+                args.max_seq_len,
+                self.n_local_kv_heads,
+                self.head_dim,
+            )
+        ).cuda()
+        self.cache_v = torch.zeros(
+            (
+                args.max_batch_size,
+                args.max_seq_len,
+                self.n_local_kv_heads,
+                self.head_dim,
+            )
+        ).cuda()
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        start_pos: int,
+        freqs_cis: torch.Tensor,
+        mask: Optional[torch.Tensor],
+    ):
+        bsz, seqlen, _ = x.shape
+        xq, xk, xv = self.wq(x), self.wk(x), self.wv(x)
+
+        xq = xq.view(bsz, seqlen, self.n_local_heads, self.head_dim)
+        xk = xk.view(bsz, seqlen, self.n_local_kv_heads, self.head_dim)
+        xv = xv.view(bsz, seqlen, self.n_local_kv_heads, self.head_dim)
+
+        xq, xk = apply_rotary_emb(xq, xk, freqs_cis=freqs_cis)
+
+        self.cache_k = self.cache_k.to(xq)
+        self.cache_v = self.cache_v.to(xq)
+
+        self.cache_k[:bsz, start_pos : start_pos + seqlen] = xk
+        self.cache_v[:bsz, start_pos : start_pos + seqlen] = xv
+
+        keys = self.cache_k[:bsz, : start_pos + seqlen]
+        values = self.cache_v[:bsz, : start_pos + seqlen]
+
+        # repeat k/v heads if n_kv_heads < n_heads
+        keys = repeat_kv(
+            keys, self.n_rep
+        )  # (bs, cache_len + seqlen, n_local_heads, head_dim)
+        values = repeat_kv(
+            values, self.n_rep
+        )  # (bs, cache_len + seqlen, n_local_heads, head_dim)
+
+        xq = xq.transpose(1, 2)  # (bs, n_local_heads, seqlen, head_dim)
+        keys = keys.transpose(1, 2)  # (bs, n_local_heads, cache_len + seqlen, head_dim)
+        values = values.transpose(
+            1, 2
+        )  # (bs, n_local_heads, cache_len + seqlen, head_dim)
+        scores = torch.matmul(xq, keys.transpose(2, 3)) / math.sqrt(self.head_dim)
+        if mask is not None:
+            scores = scores + mask  # (bs, n_local_heads, seqlen, cache_len + seqlen)
+        scores = F.softmax(scores.float(), dim=-1).type_as(xq)
+        output = torch.matmul(scores, values)  # (bs, n_local_heads, seqlen, head_dim)
+        output = output.transpose(1, 2).contiguous().view(bsz, seqlen, -1)
+        return self.wo(output)
+\end{lstlisting}
+
+\begin{itemize}
+    \item \texttt{Attention}: Implements multi-head self-attention.
+    \begin{itemize}
+        \item \texttt{wq}, \texttt{wk}, \texttt{wv}, \texttt{wo}: Linear layers for query, key, value, and output transformations.
+        \item \texttt{cache\_k}, \texttt{cache\_v}: Cache for keys and values to speed up processing.
+        \item \texttt{forward}: Computes attention scores, applies softmax, and computes the final output.
+    \end{itemize}
+\end{itemize}
+
+\section{FeedForward Class}
+
+\begin{lstlisting}
+class FeedForward(nn.Module):
+    def __init__(
+        self,
+        dim: int,
+        hidden_dim: int,
+        multiple_of: int,
+        ffn_dim_multiplier: Optional[float],
+    ):
+        super().__init__()
+        hidden_dim = int(2 * hidden_dim / 3)
+        if ffn_dim_multiplier is not None:
+            hidden_dim = int(ffn_dim_multiplier * hidden_dim)
+        hidden_dim = multiple_of * ((hidden_dim + multiple_of - 1) // multiple_of)
+
+        self.w1 = ColumnParallelLinear(
+            dim, hidden_dim, bias=False, gather_output=False, init_method=lambda x: x
+        )
+        self.w2 = RowParallelLinear(
+            hidden_dim, dim, bias=False, input_is_parallel=True, init_method=lambda x: x
+        )
+        self.w3 = ColumnParallelLinear(
+            dim, hidden_dim, bias=False, gather_output=False, init_method=lambda x: x
+        )
+
+    def forward(self, x):
+        return self.w2(F.silu(self.w1(x)) * self.w3(x))
+\end{lstlisting}
+
+\begin{itemize}
+    \item \texttt{FeedForward}: Implements the feedforward network used in transformer layers.
+    \begin{itemize}
+        \item \texttt{w1}, \texttt{w2}, \texttt{w3}: Linear layers for transformations.
+        \item \texttt{forward}: Applies the feedforward transformation with a SiLU activation function.
+    \end{itemize}
+\end{itemize}
+
+\section{Transformer Block}
+
+\begin{lstlisting}
+class TransformerBlock(nn.Module):
+    def __init__(self, layer_id: int, args: ModelArgs):
+        super().__init__()
+        self.n_heads = args.n_heads
+        self.dim = args.dim
+        self.head_dim = args.dim // args.n_heads
+        self.attention = Attention(args)
+        self.feed_forward = FeedForward(
+            dim=args.dim,
+            hidden_dim=4 * args.dim,
+            multiple_of=args.multiple_of,
+            ffn_dim_multiplier=args.ffn_dim_multiplier,
+        )
+        self.layer_id = layer_id
+        self.attention_norm = RMSNorm(args.dim, eps=args.norm_eps)
+        self.ffn_norm = RMSNorm(args.dim, eps=args.norm_eps)
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        start_pos: int,
+        freqs_cis: torch.Tensor,
+        mask: Optional[torch.Tensor],
+    ):
+        h = x + self.attention(self.attention_norm(x), start_pos, freqs_cis, mask)
+        out = h + self.feed_forward(self.ffn_norm(h))
+        return out
+\end{lstlisting}
+
+\begin{itemize}
+    \item \texttt{TransformerBlock}: Combines attention and feedforward networks with normalization.
+    \begin{itemize}
+        \item \texttt{attention}, \texttt{feed\_forward}: Instances of the attention and feedforward classes.
+        \item \texttt{attention\_norm}, \texttt{ffn\_norm}: Normalization layers for attention and feedforward networks.
+        \item \texttt{forward}: Applies attention and feedforward transformations to the input.
+    \end{itemize}
+\end{itemize}
+
+\section{Transformer Class}
+
+\begin{lstlisting}
+class Transformer(nn.Module):
+    def __init__(self, params: ModelArgs):
+        super().__init__()
+        self.params = params
+        self.vocab_size = params.vocab_size
+        self.n_layers = params.n_layers
+
+        self.tok_embeddings = VocabParallelEmbedding(
+            params.vocab_size, params.dim, init_method=lambda x: x
+        )
+
+        self.layers = torch.nn.ModuleList()
+        for layer_id in range(params.n_layers):
+            self.layers.append(TransformerBlock(layer_id, params))
+
+        self.norm = RMSNorm(params.dim, eps=params.norm_eps)
+        self.output = ColumnParallelLinear(
+            params.dim, params.vocab_size, bias=False, init_method=lambda x: x
+        )
+
+        self.freqs_cis = precompute_freqs_cis(
+            params.dim // params.n_heads,
+            params.max_seq_len * 2,
+            params.rope_theta,
+        )
+
+    @torch.inference_mode()
+    def forward(self, tokens: torch.Tensor, start_pos: int):
+        _bsz, seqlen = tokens.shape
+        h = self.tok_embeddings(tokens)
+        self.freqs_cis = self.freqs_cis.to(h.device)
+        freqs_cis = self.freqs_cis[start_pos : start_pos + seqlen]
+
+        mask = None
+        if seqlen > 1:
+            mask = torch.full((seqlen, seqlen), float("-inf"), device=tokens.device)
+            mask = torch.triu(mask, diagonal=1)
+            mask = torch.hstack(
+                [torch.zeros((seqlen, start_pos), device=tokens.device), mask]
+            ).type_as(h)
+
+        for layer in self.layers:
+            h = layer(h, start_pos, freqs_cis, mask)
+        h = self.norm(h)
+        output = self.output(h).float()
+        return output
+\end{lstlisting}
+
+\begin{itemize}
+    \item \texttt{Transformer}: The main transformer model combining embedding, multiple transformer blocks, and output layers.
+    \begin{itemize}
+        \item \texttt{tok\_embeddings}: Token embeddings layer.
+        \item \texttt{layers}: List of transformer blocks.
+        \item \texttt{norm}, \texttt{output}: Final normalization and output linear layers.
+        \item \texttt{freqs\_cis}: Precomputed frequency components for positional encoding.
+        \item \texttt{forward}: Applies the embedding, transformer blocks, normalization, and output layers to the input tokens.
+    \end{itemize}
+\end{itemize}
+
+\section{Mathematical Concepts}
+
+\subsection{Root Mean Square Layer Normalization (RMSNorm)}
+
+Normalizes the input by its root mean square (RMS) value and scales it with learnable parameters.
+
+\begin{equation}
+\text{RMSNorm}(x) = \frac{x}{\sqrt{\frac{1}{n} \sum_{i=1}^n x_i^2 + \epsilon}}
+\end{equation}
+
+\subsection{Rotary Positional Embedding}
+
+Provides positional information to the model by rotating the query and key vectors.
+
+\begin{equation}
+\text{Rotary}(x) = x \cdot e^{i \theta}
+\end{equation}
+
+where \( \theta \) is the angle based on position.
+
+\subsection{Multi-Head Self-Attention}
+
+Computes attention scores between query and key vectors, applies softmax, and combines with value vectors.
+
+\begin{equation}
+\text{Attention}(Q, K, V) = \text{softmax}\left(\frac{Q K^T}{\sqrt{d_k}}\right) V
+\end{equation}
+
+\subsection{FeedForward Network}
+
+Applies linear transformations and non-linear activation functions to the input.
+
+\begin{equation}
+\text{FFN}(x) = W_2 (\text{activation}(W_1 x))
+\end{equation}
+
+\subsection{Transformer Block}
+
+Combines multi-head self-attention and feedforward networks with normalization layers.
+
+\begin{equation}
+\text{Block}(x) = \text{FFN}(\text{Norm}(\text{Attention}(\text{Norm}(x))))
+\end{equation}
+
+This detailed breakdown provides an in-depth understanding of the code and the underlying mathematical concepts.
+
+% \end{document}
+
+% 
+\section{Imports and Initial Setup}
+
+\begin{lstlisting}
+import os
+from logging import getLogger
+from pathlib import Path
+from typing import (
+    AbstractSet,
+    cast,
+    Collection,
+    Dict,
+    Iterator,
+    List,
+    Literal,
+    Sequence,
+    TypedDict,
+    Union,
+)
+
+import tiktoken
+from tiktoken.load import load_tiktoken_bpe
+
+logger = getLogger(__name__)
+
+Role = Literal["system", "user", "assistant"]
+
+class Message(TypedDict):
+    role: Role
+    content: str
+
+Dialog = Sequence[Message]
+\end{lstlisting}
+
+\begin{itemize}
+    \item \texttt{os}: Standard library for interacting with the operating system.
+    \item \texttt{logging}: Standard library for logging.
+    \item \texttt{pathlib}: Standard library for filesystem path operations.
+    \item \texttt{typing}: Provides type hints for better code readability.
+    \item \texttt{tiktoken}: Library for tokenization.
+\end{itemize}
+
+\section{Tokenizer Class}
+
+\begin{lstlisting}
+class Tokenizer:
+    """
+    Tokenizing and encoding/decoding text using the Tiktoken tokenizer.
+    """
+
+    special_tokens: Dict[str, int]
+
+    num_reserved_special_tokens = 256
+
+    pat_str = r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+"  # noqa: E501
+
+    def __init__(self, model_path: str):
+        """
+        Initializes the Tokenizer with a Tiktoken model.
+
+        Args:
+            model_path (str): The path to the Tiktoken model file.
+        """
+        assert os.path.isfile(model_path), model_path
+
+        mergeable_ranks = load_tiktoken_bpe(model_path)
+        num_base_tokens = len(mergeable_ranks)
+        special_tokens = [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",  # end of turn
+        ] + [
+            f"<|reserved_special_token_{i}|>"
+            for i in range(5, self.num_reserved_special_tokens - 5)
+        ]
+        self.special_tokens = {
+            token: num_base_tokens + i for i, token in enumerate(special_tokens)
+        }
+        self.model = tiktoken.Encoding(
+            name=Path(model_path).name,
+            pat_str=self.pat_str,
+            mergeable_ranks=mergeable_ranks,
+            special_tokens=self.special_tokens,
+        )
+        logger.info(f"Reloaded tiktoken model from {model_path}")
+
+        self.n_words: int = self.model.n_vocab
+        # BOS / EOS token IDs
+        self.bos_id: int = self.special_tokens[""]
+        self.eos_id: int = self.special_tokens[""]
+        self.pad_id: int = -1
+        self.stop_tokens = {
+            self.special_tokens[""],
+            self.special_tokens[""],
+        }
+        logger.info(
+            f"#words: {self.n_words} - BOS ID: {self.bos_id} - EOS ID: {self.eos_id}"
+        )
+
+    def encode(
+        self,
+        s: str,
+        *,
+        bos: bool,
+        eos: bool,
+        allowed_special: Union[Literal["all"], AbstractSet[str]] = set(),
+        disallowed_special: Union[Literal["all"], Collection[str]] = (),
+    ) -> List[int]:
+        """
+        Encodes a string into a list of token IDs.
+
+        Args:
+            s (str): The input string to be encoded.
+            bos (bool): Whether to prepend the beginning-of-sequence token.
+            eos (bool): Whether to append the end-of-sequence token.
+            allowed_tokens ("all"|set[str]): allowed special tokens in string
+            disallowed_tokens ("all"|set[str]): special tokens that raise an error when in string
+
+        Returns:
+            list[int]: A list of token IDs.
+
+        By default, setting disallowed_special=() encodes a string by ignoring
+        special tokens. Specifically:
+        - Setting `disallowed_special` to () will cause all text corresponding
+          to special tokens to be encoded as natural text (insteading of raising
+          an error).
+        - Setting `allowed_special` to "all" will treat all text corresponding
+          to special tokens to be encoded as special tokens.
+        """
+        assert type(s) is str
+
+        # The tiktoken tokenizer can handle <=400k chars without
+        # pyo3_runtime.PanicException.
+        TIKTOKEN_MAX_ENCODE_CHARS = 400_000
+
+        # https://github.com/openai/tiktoken/issues/195
+        # Here we iterate over subsequences and split if we exceed the limit
+        # of max consecutive non-whitespace or whitespace characters.
+        MAX_NO_WHITESPACES_CHARS = 25_000
+
+        substrs = (
+            substr
+            for i in range(0, len(s), TIKTOKEN_MAX_ENCODE_CHARS)
+            for substr in self._split_whitespaces_or_nonwhitespaces(
+                s[i : i + TIKTOKEN_MAX_ENCODE_CHARS], MAX_NO_WHITESPACES_CHARS
+            )
+        )
+        t: List[int] = []
+        for substr in substrs:
+            t.extend(
+                self.model.encode(
+                    substr,
+                    allowed_special=allowed_special,
+                    disallowed_special=disallowed_special,
+                )
+            )
+        if bos:
+            t.insert(0, self.bos_id)
+        if eos:
+            t.append(self.eos_id)
+        return t
+
+    def decode(self, t: Sequence[int]) -> str:
+        """
+        Decodes a list of token IDs into a string.
+
+        Args:
+            t (List[int]): The list of token IDs to be decoded.
+
+        Returns:
+            str: The decoded string.
+        """
+        # Typecast is safe here. Tiktoken doesn't do anything list-related with the sequence.
+        return self.model.decode(cast(List[int], t))
+
+    @staticmethod
+    def _split_whitespaces_or_nonwhitespaces(
+        s: str, max_consecutive_slice_len: int
+    ) -> Iterator[str]:
+        """
+        Splits the string `s` so that each substring contains no more than `max_consecutive_slice_len`
+        consecutive whitespaces or consecutive non-whitespaces.
+        """
+        current_slice_len = 0
+        current_slice_is_space = s[0].isspace() if len(s) > 0 else False
+        slice_start = 0
+
+        for i in range(len(s)):
+            is_now_space = s[i].isspace()
+
+            if current_slice_is_space ^ is_now_space:
+                current_slice_len = 1
+                current_slice_is_space = is_now_space
+            else:
+                current_slice_len += 1
+                if current_slice_len > max_consecutive_slice_len:
+                    yield s[slice_start:i]
+                    slice_start = i
+                    current_slice_len = 1
+        yield s[slice_start:]
+\end{lstlisting}
+
+\begin{itemize}
+    \item \texttt{Tokenizer}: A class for tokenizing and encoding/decoding text using the Tiktoken tokenizer.
+    \begin{itemize}
+        \item \texttt{special\_tokens}: A dictionary mapping special tokens to their corresponding IDs.
+        \item \texttt{num\_reserved\_special\_tokens}: Number of reserved special tokens.
+        \item \texttt{pat\_str}: Regular expression pattern for tokenization.
+        \item \texttt{\_\_init\_\_}: Initializes the Tokenizer with a Tiktoken model.
+        \item \texttt{encode}: Encodes a string into a list of token IDs.
+        \item \texttt{decode}: Decodes a list of token IDs into a string.
+        \item \texttt{\_split\_whitespaces\_or\_nonwhitespaces}: Splits a string so that each substring contains no more than a specified number of consecutive whitespaces or non-whitespaces.
+    \end{itemize}
+\end{itemize}
+
+\section{ChatFormat Class}
+
+\begin{lstlisting}
+class ChatFormat:
+    def __init__(self, tokenizer: Tokenizer):
+        self.tokenizer = tokenizer
+
+    def encode_header(self, message: Message) -> List[int]:
+        tokens = []
+        tokens.append(self.tokenizer.special_tokens[""])
+        tokens.extend(self.tokenizer.encode(message["role"], bos=False, eos=False))
+        tokens.append(self.tokenizer.special_tokens[""])
+        tokens.extend(self.tokenizer.encode("\n\n", bos=False, eos=False))
+        return tokens
+
+    def encode_message(self, message: Message) -> List[int]:
+        tokens = self.encode_header(message)
+        tokens.extend(
+            self.tokenizer.encode(message["content"].strip(), bos=False, eos=False)
+        )
+        tokens.append(self.tokenizer.special_tokens[""])
+        return tokens
+
+    def encode_dialog_prompt(self, dialog: Dialog) -> List[int]:
+        tokens = []
+        tokens.append(self.tokenizer.special_tokens[""])
+        for message in dialog:
+            tokens.extend(self.encode_message(message))
+        tokens.extend(self.encode_header({"role": "assistant", "content": ""}))
+        return tokens
+\end{lstlisting}
+
+\begin{itemize}
+    \item \texttt{ChatFormat}: A class for encoding chat messages and dialogs.
+    \begin{itemize}
+        \item \texttt{\_\_init\_\_}: Initializes the ChatFormat with a Tokenizer instance.
+        \item \texttt{encode\_header}: Encodes the header of a message.
+        \item \texttt{encode\_message}: Encodes a message.
+        \item \texttt{encode\_dialog\_prompt}: Encodes a dialog prompt.
+    \end{itemize}
+\end{itemize}
+
+\section{Mathematical Concepts}
+
+\subsection{Root Mean Square Layer Normalization (RMSNorm)}
+
+Normalizes the input by its root mean square (RMS) value and scales it with learnable parameters.
+
+\begin{equation}
+\text{RMSNorm}(x) = \frac{x}{\sqrt{\frac{1}{n} \sum_{i=1}^n x_i^2 + \epsilon}}
+\end{equation}
+
+\subsection{Rotary Positional Embedding}
+
+Provides positional information to the model by rotating the query and key vectors.
+
+\begin{equation}
+\text{Rotary}(x) = x \cdot e^{i \theta}
+\end{equation}
+
+where \( \theta \) is the angle based on position.
+
+\subsection{Multi-Head Self-Attention}
+
+Computes attention scores between query and key vectors, applies softmax, and combines with value vectors.
+
+\begin{equation}
+\text{Attention}(Q, K, V) = \text{softmax}\left(\frac{Q K^T}{\sqrt{d_k}}\right) V
+\end{equation}
+
+\subsection{FeedForward Network}
+
+Applies linear transformations and non-linear activation functions to the input.
+
+\begin{equation}
+\text{FFN}(x) = W_2 (\text{activation}(W_1 x))
+\end{equation}
+
+\subsection{Transformer Block}
+
+Combines multi-head self-attention and feedforward networks with normalization layers.
+
+\begin{equation}
+\text{Block}(x) = \text{FFN}(\text{Norm}(\text{Attention}(\text{Norm}(x))))
+\end{equation}
+
+This detailed breakdown provides an in-depth understanding of the code and the underlying mathematical concepts.
+
+% \end{document}
+
